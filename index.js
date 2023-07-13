@@ -1,36 +1,52 @@
-import colors from "colors";
+const socket = require("socket.io");
+const http = require("http");
+const path = require("path");
+const fs = require("fs");
+const { default: faker } = require("@faker-js/faker");
 
-const args = process.argv.slice(2);
-if (args.length !== 2) {
-  console.log("Должно быть два числовых аргумента");
-} else if (isNaN(args[0]) || isNaN(args[1])) {
-  console.log("Аргументы должны быть числом");
-} else if (args[0] >= args[1]) {
-  console.log("Первый аргумент должен быть меньше второго");
-} else if (args[0] < 0 && args[1] <= 0) {
-  console.log("В указанном интервале нет простых чисел");
-} else {
-  args[0] = parseInt(args[0]);
-  args[1] = parseInt(args[1]);
-  let prime = [];
-  for (let i = args[0]; i <= args[1]; i++) {
-    if (i < 2) continue;
-    let flag = true;
-    for (let j = 2; j <= i / 2; j++) {
-      if (i % j == 0) {
-        flag = false;
-        break;
-      }
-    }
-    if (flag) prime.push(i);
-  }
-  if (prime.length == 0) {
-    console.log("В указанном интервале нет простых чисел");
-  } else {
-    for (let i = 0; i < prime.length; i++) {
-      if ((i + 1) % 3 == 0) console.log(colors.red(prime[i]));
-      else if ((i + 1) % 3 == 1) console.log(colors.green(prime[i]));
-      else console.log(colors.yellow(prime[i]));
-    }
-  }
-}
+const server = http.createServer((req, res) => {
+  const indexPath = path.join(__dirname, "index.html");
+  const readStream = fs.createReadStream(indexPath);
+  readStream.pipe(res);
+});
+
+const io = socket(server);
+const usersMap = {};
+io.on("connection", (client) => {
+  usersMap[client.id] = {
+    id: client.id,
+    username: faker.name.findName(),
+  };
+  const connectedMessage = `......................User ${
+    usersMap[client.id].username
+  } connected!`;
+  const disConnectedMessage = `......................User ${
+    usersMap[client.id].username
+  } disconnected!`;
+  let usersInChatMessage = `
+    ${io.engine.clientsCount} users in chat
+    ......................`;
+
+  client.emit("server-msg", connectedMessage);
+  client.broadcast.emit("server-msg", connectedMessage);
+  client.emit("server-msg", usersInChatMessage);
+  client.broadcast.emit("server-msg", usersInChatMessage);
+
+  client.on("client-msg", (data) => {
+    const payload = `
+    ${usersMap[client.id].username}: ${data.message}
+    `;
+    client.broadcast.emit("server-msg", payload);
+    client.emit("server-msg", payload);
+  });
+
+  client.on("disconnect", () => {
+    client.broadcast.emit("server-msg", disConnectedMessage);
+    client.broadcast.emit("server-msg", usersInChatMessage);
+    delete usersMap[client.id];
+  });
+
+  //   console.log(usersMap);
+});
+
+server.listen(3000);
